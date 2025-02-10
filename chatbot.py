@@ -3,6 +3,9 @@ import math
 import re
 from datetime import datetime
 import json
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
+
 
 class SmartBot:
     def __init__(self):
@@ -28,6 +31,18 @@ class SmartBot:
                 "Chillin' like a villain in a database! 😎",
                 "Living the dream, one byte at a time! 🚀",
                 "Just vibing in the cloud, you know how it is! ⚡"
+
+            ],
+            "wsp": [
+                "I'm doing great! Living my best life in these circuits!",
+                "I'm feeling particularly witty today - my joke processor is running at 100%!",
+                "Better than a computer with a virus! *ba dum tss*"
+            ],
+            "casual_wsp": [
+                "Chillin' like a villain in a database! 😎",
+                "Living the dream, one byte at a time! 🚀",
+                "Just vibing in the cloud, you know how it is! ⚡"
+
             ],
             "goodbye": [
                 "Goodbye! I'll go back to counting zeros and ones... just kidding, I'll probably watch cat videos.",
@@ -228,31 +243,37 @@ class SmartBot:
         sentiment = self.analyze_sentiment(user_input)
         user_input = user_input.lower()
 
+        # Initialize response
+        response = None
+
         # Check for casual greetings
         casual_greetings = ["yo", "sup", "wsp", "hey bro", "wassup", "what's up", "whats good"]
         if any(greeting in user_input for greeting in casual_greetings):
             response = random.choice(self.responses["casual_greeting"])
             if sentiment > 0:
                 response += " Loving the vibe! 🔥"
-            return response
 
         # Check for casual "how are you"
-        casual_how_are_you = ["how u doing", "how r u", "how's it going", "hows life", "what's new"]
-        if any(phrase in user_input for phrase in casual_how_are_you):
-            return random.choice(self.responses["casual_how_are_you"])
+        elif any(phrase in user_input for phrase in ["how u doing", "how r u", "how's it going", "hows life", "what's new"]):
+            response = random.choice(self.responses["casual_how_are_you"])
 
         # Check for regular greetings
-        if any(word in user_input for word in ["hi", "hello", "hey"]):
+        elif any(word in user_input for word in ["hi", "hello", "hey"]):
             response = random.choice(self.responses["greeting"])
             if sentiment > 0:
                 response += " I can tell you're in a good mood! 😊"
-            return response
         
         # Check for casual goodbyes
-        casual_goodbyes = ["peace", "cya", "see ya", "catch you", "later"]
-        if any(goodbye in user_input for goodbye in casual_goodbyes):
-            return random.choice(self.responses["casual_goodbye"])
+        elif any(goodbye in user_input for goodbye in ["peace", "cya", "see ya", "catch you", "later", "bye", "goodbye"]):
+            response = random.choice(self.responses["casual_goodbye"])
         
+        # Check for food description questions
+        elif any(word in user_input for word in ["what is", "what's", "tell me about"]):
+            for food, description in self.knowledge_base["food_descriptions"].items():
+                if food in user_input:
+                    response = description
+                    break
+
         # Check for math/numbers
         elif any(char.isdigit() for char in user_input):
             response = self.get_smart_math_response(user_input)
@@ -263,7 +284,7 @@ class SmartBot:
                 if country in user_input:
                     response = f"The capital of {country.upper()} is {capital}! 🌍"
                     break
-            else:
+            if not response:
                 response = "I'm not sure about that capital city. But I'm learning new ones every day!"
                 
         # Check for questions about capabilities
@@ -271,38 +292,43 @@ class SmartBot:
             capabilities = ", ".join(self.knowledge_base["general"]["capabilities"])
             response = f"I can help you with {capabilities}! What would you like to know? 😊"
             
-        # Check for food description questions
-        elif any(word in user_input.lower() for word in ["what is", "what's", "tell me about"]):
-            for food, description in self.knowledge_base["food_descriptions"].items():
-                if food in user_input.lower():
-                    return description
-
         # Handle food-related questions without "what is"
-        for food in self.knowledge_base["food_descriptions"].keys():
-            if food in user_input.lower():
-                return self.knowledge_base["food_descriptions"][food]
+        elif not response:
+            for food in self.knowledge_base["food_descriptions"].keys():
+                if food in user_input:
+                    response = self.knowledge_base["food_descriptions"][food]
+                    break
 
-        # Default response with context awareness
-        else:
+        # Default response if nothing else matched
+        if not response:
             response = "I'm not quite sure about that, but I'm always learning! Want to try asking something else?"
 
         # Store response in conversation history
         self.conversation_history.append({"bot": response, "timestamp": datetime.now()})
         return response
 
-    def run(self):
-        print("🤖 Hi! I'm SmartBot, your friendly neighborhood AI!")
-        print("I can help you with math, answer questions, and chat! (Type 'bye' to exit)")
+# Create Flask app and bot instance
+app = Flask(__name__)
+CORS(app)
+bot = SmartBot()  # Create a single instance of SmartBot
+
+@app.route('/')
+def home():
+    return render_template('index.html')
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    try:
+        user_message = request.json.get('message', '')
+        if not user_message:
+            return jsonify({'response': 'Please type a message!'})
         
-        while True:
-            user_input = input("\nYou: ").strip()
-            if user_input.lower() in ['bye', 'goodbye', 'exit']:
-                print("\nBot:", self.get_response("goodbye"))
-                break
-                
-            response = self.get_response(user_input)
-            print("\nBot:", response)
+        response = bot.get_response(user_message)
+        return jsonify({'response': response})
+    except Exception as e:
+        print(f"Error in /chat: {str(e)}")  # For debugging
+        return jsonify({'response': 'Sorry, I encountered an error. Please try again!'})
 
 if __name__ == "__main__":
-    bot = SmartBot()
-    bot.run() 
+    # Remove the bot.run() call since we're using Flask now
+    app.run(debug=True, port=5000) 
